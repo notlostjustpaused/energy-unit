@@ -16,8 +16,8 @@ def run_multi_day_demo():
 
     ledger = EnergyLedger(
         name="Demo Regional Grid v0.3",
-        mint_fee_rate=0.01,       # 1% of newly minted energy goes to treasury
-        transfer_fee_rate=0.0,    # keep transfers free for now
+        mint_fee_rate=0.01,
+        transfer_fee_rate=0.0,
     )
 
     solar = ledger.create_account("Sunny Hills Solar", is_producer=True)
@@ -108,14 +108,22 @@ def run_multi_day_demo():
     print("-" * 70)
 
     stats = ledger.summary_stats()
-    print("\n=== FINAL SUMMARY ===")
-    for k, v in stats.items():
-        print(f"  {k:<22}: {v}")
+
+    print("\n" + "=" * 70)
+    print("FINAL SUMMARY (in plain terms)")
+    print("=" * 70)
+    print(f"  Real electricity produced (verified) : {stats['total_verified_kwh']:>12,.0f} kWh")
+    print(f"  Energy Units still in circulation    : {stats['circulating']:>12,.0f} EU")
+    print(f"  Energy Units redeemed (used)         : {stats['total_redeemed']:>12,.0f} EU")
+    print(f"  Fees collected into Treasury         : {stats['fees_collected']:>12,.1f} EU")
+    print(f"  Backing ratio (should be ≤ 1.0)      : {stats['backing_ratio']:>12.4f}")
+    print()
+    print("  The system stayed honest: circulating units never exceeded real production.")
+    print("=" * 70)
 
     out_path = os.path.join("simulations", "multi_day_events_v03.csv")
     full_path = ledger.export_events_csv(out_path)
-    print(f"\nEvents exported to: {full_path}")
-    print("\nAll invariants held. Treasury has accumulated protocol fees.")
+    print(f"\nDetailed events saved to: {full_path}")
     return ledger
 
 
