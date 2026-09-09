@@ -121,7 +121,8 @@ def run_multi_day_demo():
     print("  The system stayed honest: circulating units never exceeded real production.")
     print("=" * 70)
 
-    out_path = os.path.join("simulations", "multi_day_events_v03.csv")
+    timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    out_path = os.path.join("simulations", f"multi_day_events_{timestamp_str}.csv")
     full_path = ledger.export_events_csv(out_path)
     print(f"\nDetailed events saved to: {full_path}")
     return ledger
