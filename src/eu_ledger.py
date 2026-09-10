@@ -6,6 +6,10 @@ v0.3 additions:
 - Protocol fee on mint (and optionally transfer)
 - Dedicated treasury account that accumulates fees
 - Cleaner stats and fee reporting
+
+v0.4 additions:
+- Approved keys list for trusted devices
+- report_signed_measurement (Stage 2 entry point, simulated signatures)
 """
 
 from __future__ import annotations
@@ -84,6 +88,7 @@ class EnergyLedger:
     """
     In-memory ledger for Energy Units.
     Enforces physical scarcity + optional protocol fees that flow to a treasury.
+    Stage 2: can also accept signed measurements from approved devices.
     """
 
     def __init__(
@@ -112,6 +117,9 @@ class EnergyLedger:
         self.redemption_events: List[RedemptionEvent] = []
         self.storage_events: List[StorageEvent] = []
         self.created_at = datetime.utcnow()
+
+        # Approved public keys for signed measurements (Stage 2)
+        self.approved_keys: Dict[str, str] = {}
 
         self.treasury = self.create_account("Protocol Treasury", is_treasury=True)
 
@@ -145,6 +153,87 @@ class EnergyLedger:
         if account_id not in self.accounts:
             raise KeyError(f"Account {account_id} not found")
         return self.accounts[account_id]
+
+    def add_approved_key(self, device_id: str, public_key: str) -> None:
+        """Register a device and its public key as trusted for signed measurements."""
+        if not device_id or not public_key:
+            raise ValueError("device_id and public_key are required")
+        self.approved_keys[device_id] = public_key
+
+    def _simulate_verify_signature(
+        self,
+        device_id: str,
+        kwh: float,
+        timestamp: datetime,
+        measurement_type: str,
+        signature: str,
+        public_key: str,
+    ) -> bool:
+        """
+        Simulated signature verification for development.
+        In a real system this would use proper cryptography (e.g. ed25519).
+        Here we accept a signature only if it matches a simple deterministic pattern.
+        """
+        expected = f"SIG:{device_id}:{kwh}:{timestamp.isoformat()}:{measurement_type}:{public_key}"
+        return signature == expected
+
+    def report_signed_measurement(
+        self,
+        device_id: str,
+        kwh: float,
+        timestamp: datetime,
+        measurement_type: str,
+        signature: str,
+        public_key: str,
+        producer_account_id: str,
+        notes: str = "",
+    ) -> ProductionEvent:
+        """
+        Accept a signed measurement and mint Energy Units only if verification passes.
+        This is the Stage 2 entry point.
+        """
+        if device_id not in self.approved_keys:
+            raise PermissionError(f"Device '{device_id}' is not on the approved list")
+        if self.approved_keys[device_id] != public_key:
+            raise PermissionError(f"Public key does not match the approved key for device '{device_id}'")
+
+        if not self._simulate_verify_signature(
+            device_id, kwh, timestamp, measurement_type, signature, public_key
+        ):
+            raise ValueError("Invalid signature — measurement rejected")
+
+        if kwh <= 0:
+            raise ValueError("Energy amount must be positive")
+        if measurement_type not in ("production", "discharge", "consumption"):
+            raise ValueError("measurement_type must be 'production', 'discharge', or 'consumption'")
+
+        producer = self.get_account(producer_account_id)
+        if not (producer.is_producer or producer.is_storage):
+            raise PermissionError(f"Account {producer.name} is not authorized to receive minted EUs")
+
+        fee = round(kwh * self.mint_fee_rate, 6)
+        net = round(kwh - fee, 6)
+
+        event = ProductionEvent(
+            event_id=str(uuid.uuid4())[:8],
+            producer_id=producer_account_id,
+            kwh=kwh,
+            fee_eu=fee,
+            net_minted=net,
+            timestamp=timestamp,
+            location=device_id,
+            notes=f"Signed measurement ({measurement_type}) | {notes}",
+        )
+
+        producer.balance_eu += net
+        self.treasury.balance_eu += fee
+        self.total_verified_production_kwh += kwh
+        self.total_minted_eu += kwh
+        self.total_fees_collected += fee
+        self.production_events.append(event)
+
+        self._check_invariants()
+        return event
 
     def report_production(
         self,
